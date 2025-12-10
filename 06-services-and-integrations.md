@@ -9,6 +9,43 @@
 
 ---
 
+> **📚 TL;DR - What You'll Build**
+>
+> By the end, you'll have:
+> - ✅ Image uploads with Cloudinary (25GB free!)
+> - ✅ Automatic image optimization (WebP, resize)
+> - ✅ Email system with Resend (100/day free)
+> - ✅ Beautiful React Email templates
+> - ✅ AI integration with OpenRouter (free models!)
+> - ✅ Background jobs (cron scheduling)
+>
+> **Result:** Feature-complete, production-ready app! 🚀
+
+---
+
+## 📍 Progress: Part 6 of 7
+
+```
+[████████████████████████░] 86% Complete (after this part!)
+Part 1 ✅ | Part 2 ✅ | Part 3 ✅ | Part 4 ✅ | Part 5 ✅ | Part 6 📍 YOU ARE HERE
+```
+
+**Almost there!** Just 1 part left after this! 🎉
+
+---
+
+## ⏱️ Time Breakdown
+
+- **Cloudinary Setup & Image Uploads:** 2-3 hours
+- **Email System (Resend + React Email):** 2-3 hours
+- **AI Integration (OpenRouter):** 1-2 hours
+- **Background Jobs:** 1 hour
+- **Testing & Exercises:** 1 hour
+
+**Total:** 6-8 hours (Worth it for complete app!)
+
+---
+
 ## What We'll Learn
 
 ✅ **Object storage concepts** - Why separate storage?  
@@ -24,61 +61,291 @@
 
 ## The Problem: File Storage
 
-### Why Not Store Files in Database? 🔴
+> **💡 Key Question**
+>
+> **Where do you store user-uploaded images?**
+>
+> **Wrong answers:**
+> - ❌ Database (bloat, slow, expensive)
+> - ❌ Server filesystem (doesn't work serverless)
+>
+> **Right answer:**
+> - ✅ Object storage (Cloudinary, S3, etc.)
+>
+> **Why:** Scales infinitely, CDN-backed, optimized automatically!
 
-**Scenario:** Users upload article images
+---
 
-**Option 1: Store in Database (Bad Idea)**
+### Why Not Store Files in Database?
+
+> **⚠️ The Database BLOB Mistake**
+>
+> **Storing images in database = common beginner mistake!**
+>
+> It seems logical:
+> - "Article has an image → Store with article → Database!"
+> 
+> But this breaks down at scale:
+> - 1,000 users upload 2MB images = 2GB in database!
+> - Database backups take forever
+> - Queries slow to a crawl
+> - Costs skyrocket
+>
+> **Databases are for structured data, not files!**
+
+**Option 1: Store in Database (❌ Bad Idea)**
+
 ```sql
 CREATE TABLE articles (
   id UUID,
   title TEXT,
   content TEXT,
-  image BYTEA  -- ❌ Binary data in database
+  image BYTEA  -- ❌ Binary Large OBject (BLOB)
+);
+
+-- Storing a 2MB image:
+INSERT INTO articles VALUES (
+  '123',
+  'My Article',
+  'Content here...',
+  '\x89504e470d0a1a0a0000000d49...'  -- 2MB of binary data!
 );
 ```
 
 **Problems:**
-1. **Database bloat** - Images are huge (1MB+)
-2. **Slow queries** - Fetching large BLOBs is slow
-3. **Expensive** - Database storage costs more
-4. **No CDN** - Can't cache images at edge
-5. **Backup overhead** - Backups become massive
 
-**Option 2: Store on Server Filesystem (Also Bad)**
+```
+1. Database Bloat 💾
+   ├─> Images are huge (1-10MB each)
+   ├─> 1,000 images = 2-20GB database size
+   ├─> Backup takes 10x longer
+   └─> Postgres struggles with large BLOBs
+
+2. Slow Queries 🐌
+   ├─> SELECT * fetches entire image
+   ├─> Network transfer takes seconds
+   ├─> Can't load partial data
+   └─> Every query becomes slow
+
+3. Expensive Costs 💸
+   ├─> Database storage: $0.10-0.20/GB/month
+   ├─> 100GB images = $10-20/month
+   ├─> vs Object storage: $0.023/GB/month
+   └─> 4x more expensive!
+
+4. No CDN 🌍
+   ├─> Images served from single location
+   ├─> Slow for global users
+   ├─> No edge caching
+   └─> Bandwidth costs high
+
+5. Backup Overhead 📦
+   ├─> Backups include all images
+   ├─> Takes hours instead of minutes
+   ├─> Restore takes forever
+   └─> Storage costs multiply
+
+6. No Optimization 🎨
+   ├─> Original format (not WebP)
+   ├─> Original size (not resized)
+   ├─> No compression
+   └─> Wastes bandwidth
+```
+
+> **💡 Real-World Example**
+>
+> **WikiApp scenario:**
+> - 10,000 articles with images
+> - Average image: 2MB
+> - Total: 20GB in database! 🔴
+>
+> **Impact:**
+> - Database backups: 2 hours (vs 2 minutes)
+> - Query performance: 500ms (vs 50ms)
+> - Monthly cost: $50 (vs $1!)
+> - Global latency: 500ms (vs 50ms with CDN)
+
+---
+
+### Why Not Store on Server Filesystem?
+
+**Option 2: Store on Server (❌ Also Bad)**
+
 ```typescript
 // ❌ Don't do this
-fs.writeFileSync(`/uploads/${filename}`, file);
-```
+import fs from 'fs';
 
-**Problems:**
-1. **Serverless incompatible** - Filesystem resets
-2. **No persistence** - Files disappear on redeploy
-3. **No scaling** - Single server storage
-4. **No CDN** - Direct server requests
-
-**Option 3: Object Storage (✅ The Right Way)**
-```
-User uploads image
-└─> Send to Cloudinary
-    ├─> Stores in cloud storage
-    ├─> Optimizes (compress, resize)
-    ├─> Serves via CDN
-    └─> Returns URL
-
-Database stores URL only:
-{
-  imageUrl: "https://res.cloudinary.com/..."
+export async function POST(request: Request) {
+  const formData = await request.formData();
+  const file = formData.get('file') as File;
+  
+  // Save to server filesystem
+  const buffer = await file.arrayBuffer();
+  fs.writeFileSync(`/uploads/${file.name}`, Buffer.from(buffer));
+  
+  return Response.json({ url: `/uploads/${file.name}` });
 }
 ```
 
+**Problems:**
+
+```
+1. Serverless Incompatible ☁️
+   ├─> Vercel/Netlify have read-only filesystem
+   ├─> Files can't be written
+   ├─> Code throws errors in production
+   └─> Won't work at all!
+
+2. No Persistence 💨
+   ├─> Filesystem resets on redeploy
+   ├─> All images disappear!
+   ├─> Users see broken images
+   └─> Data loss disaster
+
+3. No Scaling 📈
+   ├─> Single server storage
+   ├─> Can't distribute across regions
+   ├─> Limited by disk space
+   └─> Doesn't scale horizontally
+
+4. No CDN 🌍
+   ├─> Images served directly from server
+   ├─> All traffic hits your origin
+   ├─> Expensive bandwidth
+   └─> Slow for distant users
+
+5. No Backups 💾
+   ├─> Must manually backup /uploads
+   ├─> Easy to forget
+   ├─> Disaster recovery difficult
+   └─> High risk of data loss
+```
+
+> **⚠️ Why This Seems to Work Locally**
+>
+> **Local development:**
+> ```
+> npm run dev
+> ├─> Server runs continuously
+> ├─> Filesystem persists
+> ├─> /uploads folder stays
+> └─> Everything works! ✅
+> ```
+>
+> **Production (Vercel/serverless):**
+> ```
+> Deploy to Vercel
+> ├─> Read-only filesystem
+> ├─> fs.writeFileSync() throws error
+> ├─> Can't save files
+> └─> Everything breaks! 🔴
+> ```
+>
+> **This is why testing in production matters!**
+
+---
+
+### The Right Way: Object Storage
+
+> **✅ Object Storage = Cloud File System**
+>
+> **Think of it like:**
+> - Google Drive for your app
+> - Unlimited storage
+> - Worldwide fast access
+> - Automatic backups
+>
+> **Popular services:**
+> - AWS S3 (industry standard)
+> - Cloudinary (image-focused, we'll use this!)
+> - Vercel Blob (simple, but limited)
+> - Cloudflare R2 (cheap bandwidth)
+
+**Option 3: Object Storage (✅ The Right Way)**
+
+```
+User uploads image
+│
+├─> 1. Frontend sends to Cloudinary
+│   └─> POST to api.cloudinary.com/upload
+│
+├─> 2. Cloudinary processes
+│   ├─> Stores in cloud storage (redundant, backed up)
+│   ├─> Optimizes (WebP, compression, resize)
+│   ├─> Distributes to CDN (20+ locations)
+│   └─> Returns URL
+│
+├─> 3. Database stores URL only
+│   └─> imageUrl: "https://res.cloudinary.com/app/image/upload/v1/photo.jpg"
+│
+└─> 4. Display image
+    └─> <img src={imageUrl} />
+    └─> Served from nearest CDN edge ⚡ (10-50ms globally!)
+```
+
 **Benefits:**
-- ✅ Unlimited storage (scales automatically)
-- ✅ Global CDN (fast worldwide)
-- ✅ Automatic optimization
-- ✅ Image transformations
-- ✅ Backup and redundancy
-- ✅ Free tier (25GB!)
+
+```
+✅ Unlimited Storage
+   ├─> Scales automatically
+   ├─> No capacity planning
+   ├─> Pay only for what you use
+   └─> Cloudinary: 25GB free!
+
+✅ Global CDN
+   ├─> 20+ edge locations
+   ├─> Fast everywhere (10-50ms)
+   ├─> Handles traffic spikes
+   └─> No bandwidth limits
+
+✅ Automatic Optimization
+   ├─> Converts to WebP automatically
+   ├─> Compresses without quality loss
+   ├─> Generates responsive sizes
+   └─> Saves 60-80% bandwidth!
+
+✅ Image Transformations
+   ├─> Resize: w_300,h_200
+   ├─> Crop: c_fill
+   ├─> Effects: e_blur, e_grayscale
+   └─> All via URL parameters!
+
+✅ Backup & Redundancy
+   ├─> Multi-region replication
+   ├─> 99.99% durability
+   ├─> Automatic backups
+   └─> Never lose files
+
+✅ Cost Effective
+   ├─> 25GB storage FREE
+   ├─> 25GB bandwidth FREE
+   ├─> $0.08/GB after that
+   └─> 4x cheaper than database!
+```
+
+**Cost Comparison:**
+
+| Storage Type | 100GB Storage | 100GB Bandwidth | Total/Month |
+|--------------|---------------|-----------------|-------------|
+| **Postgres DB** | $10-20 | $10-20 | **$20-40** |
+| **Server + CDN** | $5 | $10 | **$15** |
+| **Cloudinary** | FREE (25GB) + $6 | FREE (25GB) + $8 | **$14** |
+
+> **⚡ Key Takeaway - Separation of Concerns**
+>
+> **Best practice architecture:**
+> ```
+> Database:       Structured data (text, numbers, dates)
+> Object Storage: Files (images, videos, documents)
+> CDN:            Edge caching & delivery
+> ```
+>
+> **Each does what it does best!**
+> - Database = fast queries, transactions
+> - Object storage = file management, optimization
+> - CDN = global distribution, caching
+>
+> **Don't try to make database do everything!**
 
 ---
 
@@ -459,7 +726,42 @@ export function ArticleForm() {
 
 ---
 
+### ☕ Take a Break (5 minutes)
+
+**You've mastered file uploads!**
+
+**Covered so far:**
+- ✅ Why object storage (not database!)
+- ✅ Cloudinary setup (25GB free)
+- ✅ Image upload implementation
+- ✅ Automatic optimization (96% smaller!)
+
+**Take 5 minutes:**
+1. Stand and stretch
+2. Test your image upload
+3. Check Cloudinary dashboard
+
+**Coming up next:** Email system with Resend
+
+---
+
 ## Email System with Resend
+
+> **📚 TL;DR - Modern Email System**
+>
+> **Why send emails:**
+> - Welcome new users
+> - Celebrate milestones (1000 views!)
+> - Password resets
+> - Notifications
+>
+> **Old way (SMTP):** Complex setup, spam filters, manual HTML  
+> **New way (Resend):** Simple API, high deliverability, React templates!
+>
+> **Free tier:** 100 emails/day  
+> **Developer experience:** Write emails in JSX, not HTML!
+
+---
 
 ### Why Send Emails?
 
@@ -753,7 +1055,44 @@ async function sendMilestoneEmail(articleId: string, views: number) {
 
 ---
 
+---
+
+### ☕ Quick Break (5 minutes)
+
+**You've set up email system!**
+
+**Covered so far:**
+- ✅ Image uploads with Cloudinary
+- ✅ Email system with Resend
+- ✅ React Email templates (JSX!)
+
+**Take 5 minutes:**
+1. Stand and walk around
+2. Test sending an email
+3. Preview email template
+
+**Coming up next:** AI integration for auto-summaries
+
+---
+
 ## AI Integration with OpenRouter
+
+> **📚 TL;DR - AI-Powered Features**
+>
+> **Use case:** Auto-generate article summaries
+>
+> **Why it matters:**
+> - Better SEO (meta descriptions)
+> - Social media previews
+> - Improved UX (quick overviews)
+>
+> **OpenRouter:** FREE AI models (no credit card!)  
+> **Model:** Gemma 2 9B (Google, free)  
+> **API:** OpenAI-compatible (easy to use)
+>
+> **Result:** AI-powered features without the cost!
+
+---
 
 ### Why AI in WikiApp?
 
@@ -1449,517 +1788,6 @@ export async function GET(request: Request) {
 ```
 
 **Schedule: Monday at 9am**
-</details>
-
----
-
-## 🧠 CHECKPOINT: Understanding Services
-
-Before moving on, make sure you understand:
-
-1. **Why use object storage instead of database?**
-   - What problems does it solve?
-   - Performance implications?
-
-2. **How does Cloudinary optimize images?**
-   - What transformations happen?
-   - How much can files shrink?
-
-3. **Why send emails in the background?**
-   - What happens if you don't?
-   - How does it affect user experience?
-
-4. **What makes React Email better than HTML?**
-   - Why JSX for emails?
-   - What problems does it solve?
-
-5. **How do cron jobs work?**
-   - What's the schedule format?
-   - Why use them for batch processing?
-
-**Explain each concept using simple analogies.**
-
----
-
-## 🧪 EXERCISES: Practice Integrations
-
-### Exercise 1: Add Image Validation
-
-Enhance the image upload with better validation:
-
-```typescript
-// Add these checks:
-// - File size < 5MB
-// - Only image types (jpg, png, gif, webp)
-// - Minimum dimensions (300x300)
-// - Maximum dimensions (4000x4000)
-
-export async function validateAndUploadImage(file: File): Promise<string> {
-  // TODO: Implement validation
-  // TODO: Upload to Cloudinary
-  // TODO: Return URL
-}
-```
-
-<details>
-<summary>Solution</summary>
-
-```typescript
-export async function validateAndUploadImage(
-  file: File
-): Promise<string> {
-  // 1. Check file size (5MB max)
-  const maxSize = 5 * 1024 * 1024;
-  if (file.size > maxSize) {
-    throw new Error('Image must be less than 5MB');
-  }
-  
-  // 2. Check file type
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-  if (!allowedTypes.includes(file.type)) {
-    throw new Error('File must be JPG, PNG, GIF, or WebP');
-  }
-  
-  // 3. Check dimensions
-  const dimensions = await getImageDimensions(file);
-  
-  if (dimensions.width < 300 || dimensions.height < 300) {
-    throw new Error('Image must be at least 300x300 pixels');
-  }
-  
-  if (dimensions.width > 4000 || dimensions.height > 4000) {
-    throw new Error('Image must not exceed 4000x4000 pixels');
-  }
-  
-  // 4. Upload to Cloudinary
-  return await uploadImage(file);
-}
-
-async function getImageDimensions(file: File): Promise<{
-  width: number;
-  height: number;
-}> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve({
-        width: img.width,
-        height: img.height,
-      });
-    };
-    
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('Failed to load image'));
-    };
-    
-    img.src = url;
-  });
-}
-```
-</details>
-
-### Exercise 2: Create Welcome Email
-
-Build a welcome email template for new users:
-
-```typescript
-// Create src/emails/welcome-email.tsx
-// Include:
-// - Personalized greeting
-// - Quick start guide
-// - Link to first article creation
-// - Support contact info
-```
-
-<details>
-<summary>Solution</summary>
-
-```typescript
-// src/emails/welcome-email.tsx
-import {
-  Body,
-  Button,
-  Container,
-  Head,
-  Heading,
-  Hr,
-  Html,
-  Link,
-  Preview,
-  Section,
-  Text,
-} from '@react-email/components';
-
-interface WelcomeEmailProps {
-  userName: string;
-  loginUrl: string;
-}
-
-export function WelcomeEmail({ userName, loginUrl }: WelcomeEmailProps) {
-  return (
-    <Html>
-      <Head />
-      <Preview>Welcome to WikiApp - Start sharing knowledge today!</Preview>
-      <Body style={main}>
-        <Container style={container}>
-          <Heading style={h1}>Welcome to WikiApp! 👋</Heading>
-          
-          <Text style={text}>
-            Hi {userName},
-          </Text>
-          
-          <Text style={text}>
-            We're excited to have you join our community of knowledge sharers!
-            WikiApp is your platform to write, share, and discover great content.
-          </Text>
-          
-          <Section style={section}>
-            <Heading style={h2}>Quick Start Guide</Heading>
-            
-            <Text style={text}>
-              <strong>1. Create your first article</strong><br />
-              Click the "New Article" button to start writing
-            </Text>
-            
-            <Text style={text}>
-              <strong>2. Add a featured image</strong><br />
-              Make your article stand out with a great cover
-            </Text>
-            
-            <Text style={text}>
-              <strong>3. Share your knowledge</strong><br />
-              Publish and watch your view count grow!
-            </Text>
-          </Section>
-          
-          <Button href={`${loginUrl}/articles/new`} style={button}>
-            Create Your First Article
-          </Button>
-          
-          <Hr style={hr} />
-          
-          <Text style={footer}>
-            Need help? Reply to this email or visit our{' '}
-            <Link href={`${loginUrl}/help`}>Help Center</Link>
-          </Text>
-          
-          <Text style={footer}>
-            Happy writing! 📚<br />
-            The WikiApp Team
-          </Text>
-        </Container>
-      </Body>
-    </Html>
-  );
-}
-
-// Styles
-const main = {
-  backgroundColor: '#f6f9fc',
-  fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
-};
-
-const container = {
-  backgroundColor: '#ffffff',
-  margin: '0 auto',
-  padding: '20px 0 48px',
-  marginBottom: '64px',
-  maxWidth: '600px',
-};
-
-const h1 = {
-  color: '#333',
-  fontSize: '32px',
-  fontWeight: 'bold',
-  margin: '40px 0',
-  padding: '0',
-  textAlign: 'center' as const,
-};
-
-const h2 = {
-  color: '#333',
-  fontSize: '24px',
-  fontWeight: 'bold',
-  margin: '30px 0 20px',
-};
-
-const text = {
-  color: '#333',
-  fontSize: '16px',
-  lineHeight: '26px',
-  margin: '16px 0',
-};
-
-const section = {
-  padding: '24px',
-  backgroundColor: '#f8f9fa',
-  borderRadius: '8px',
-  margin: '24px 0',
-};
-
-const button = {
-  backgroundColor: '#000',
-  borderRadius: '5px',
-  color: '#fff',
-  display: 'inline-block',
-  fontSize: '16px',
-  fontWeight: 'bold',
-  textDecoration: 'none',
-  textAlign: 'center' as const,
-  padding: '14px 28px',
-  margin: '24px 0',
-};
-
-const hr = {
-  borderColor: '#e6ebf1',
-  margin: '32px 0',
-};
-
-const footer = {
-  color: '#8898aa',
-  fontSize: '14px',
-  lineHeight: '24px',
-  textAlign: 'center' as const,
-  marginTop: '16px',
-};
-```
-
-**Send it:**
-
-```typescript
-// src/lib/actions/auth.ts
-import { resend, EMAIL_FROM } from '@/lib/email';
-import { WelcomeEmail } from '@/emails/welcome-email';
-
-export async function sendWelcomeEmail(
-  email: string,
-  userName: string
-) {
-  try {
-    await resend.emails.send({
-      from: EMAIL_FROM,
-      to: email,
-      subject: 'Welcome to WikiApp! 🎉',
-      react: WelcomeEmail({
-        userName,
-        loginUrl: process.env.NEXT_PUBLIC_APP_URL!,
-      }),
-    });
-    
-    console.log(`✅ Sent welcome email to ${email}`);
-  } catch (error) {
-    console.error('Failed to send welcome email:', error);
-  }
-}
-```
-</details>
-
-### Exercise 3: AI Summary Improvement
-
-The current AI summary is basic. Enhance it to:
-- Include article tags/categories
-- Extract key points
-- Generate meta description
-
-```typescript
-export async function generateEnhancedSummary(content: string): Promise<{
-  summary: string;
-  tags: string[];
-  metaDescription: string;
-}> {
-  // TODO: Implement enhanced AI generation
-}
-```
-
-<details>
-<summary>Solution</summary>
-
-```typescript
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
-
-export async function generateEnhancedSummary(
-  content: string
-): Promise<{
-  summary: string;
-  tags: string[];
-  metaDescription: string;
-}> {
-  try {
-    const completion = await openai.chat.completions.create({
-      model: 'google/gemma-2-9b-it:free',
-      messages: [
-        {
-          role: 'user',
-          content: `Analyze this article and provide:
-1. A 2-3 sentence summary
-2. 3-5 relevant tags/categories
-3. A meta description (max 155 characters)
-
-Article:
-${content.substring(0, 2000)}
-
-Respond in JSON format:
-{
-  "summary": "...",
-  "tags": ["tag1", "tag2"],
-  "metaDescription": "..."
-}`,
-        },
-      ],
-      max_tokens: 300,
-      temperature: 0.7,
-    });
-    
-    const response = completion.choices[0]?.message?.content?.trim() || '{}';
-    
-    // Parse JSON response
-    const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-    const result = JSON.parse(cleaned);
-    
-    return {
-      summary: result.summary || '',
-      tags: result.tags || [],
-      metaDescription: result.metaDescription || '',
-    };
-  } catch (error) {
-    console.error('AI generation failed:', error);
-    return {
-      summary: '',
-      tags: [],
-      metaDescription: '',
-    };
-  }
-}
-```
-</details>
-
-### Exercise 4: Batch Image Optimization
-
-Create a cron job to optimize old images that weren't processed:
-
-```typescript
-// src/app/api/cron/optimize-images/route.ts
-// Find articles with unoptimized images
-// Re-upload to Cloudinary with optimizations
-// Update database with new URLs
-```
-
-<details>
-<summary>Solution</summary>
-
-```typescript
-// src/app/api/cron/optimize-images/route.ts
-import { db } from '@/lib/db';
-import { articles } from '@/lib/db/schema';
-import { isNotNull } from 'drizzle-orm';
-import { cloudinary } from '@/lib/cloudinary';
-import { NextResponse } from 'next/server';
-
-export async function GET(request: Request) {
-  try {
-    // Verify authorization
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    // Find articles with images
-    const articlesWithImages = await db.query.articles.findMany({
-      where: isNotNull(articles.imageUrl),
-      limit: 10, // Process 10 at a time
-    });
-    
-    console.log(`Found ${articlesWithImages.length} articles with images`);
-    
-    let optimized = 0;
-    
-    for (const article of articlesWithImages) {
-      try {
-        // Check if already optimized (has transformation params)
-        if (article.imageUrl?.includes('/w_1200,')) {
-          console.log(`⏭️  Already optimized: ${article.id}`);
-          continue;
-        }
-        
-        // Extract public_id from URL
-        const publicId = extractPublicId(article.imageUrl!);
-        
-        if (!publicId) {
-          console.log(`❌ Invalid URL: ${article.id}`);
-          continue;
-        }
-        
-        // Generate optimized URL
-        const optimizedUrl = cloudinary.url(publicId, {
-          transformation: [
-            { width: 1200, crop: 'limit' },
-            { quality: 'auto:good' },
-            { fetch_format: 'auto' },
-          ],
-        });
-        
-        // Update database
-        await db.update(articles)
-          .set({ imageUrl: optimizedUrl })
-          .where(eq(articles.id, article.id));
-        
-        console.log(`✅ Optimized: ${article.id}`);
-        optimized++;
-        
-      } catch (error) {
-        console.error(`❌ Failed to optimize ${article.id}:`, error);
-      }
-    }
-    
-    return NextResponse.json({
-      success: true,
-      processed: articlesWithImages.length,
-      optimized,
-    });
-  } catch (error) {
-    console.error('Cron job failed:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
-function extractPublicId(url: string): string | null {
-  try {
-    // Example URL: https://res.cloudinary.com/demo/image/upload/v1234/sample.jpg
-    const match = url.match(/\/upload\/(?:v\d+\/)?(.+?)(?:\.[^.]+)?$/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
-}
-```
-
-**Add to vercel.json:**
-```json
-{
-  "crons": [
-    {
-      "path": "/api/cron/summarize",
-      "schedule": "0 */6 * * *"
-    },
-    {
-      "path": "/api/cron/optimize-images",
-      "schedule": "0 2 * * *"
-    }
-  ]
-}
-```
 </details>
 
 ---
