@@ -115,4 +115,4 @@
 
 ---
 
-For detailed solutions, see the complete TROUBLESHOOTING-FULL.md guide.
+**Need more help?** Open an issue on GitHub or check the community discussions!
